@@ -1,45 +1,46 @@
 api_key = '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'
 conjecture_key = 'sk-m42iTB1N0w0kNM0QzeOA'
-
+import os
+if cores := os.cpu_count():
+    os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
 import io
 import requests
 import numpy as np
-from pynput.keyboard import Key, KeyCode, Listener
+from pynput.keyboard import Key, KeyCode, Listener, Controller
 import sounddevice as sd
-import pyautogui
 import platform
 import pyperclip
 import time
-from whispercpp import Whisper
+from faster_whisper import WhisperModel
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 whisper_api_url = 'https://api.openai.com/v1/audio/transcriptions'
 conjecture_api_url = 'https://api.conjecture.dev/transcribe'
 
 HOTKEY = KeyCode.from_char('x')
-pyautogui.FAILSAFE = False
-alt_pressed = False
-ctrl_pressed = False
+MODIFIERS = {Key.alt, Key.ctrl}
+keyboard = Controller()
+current_pressed_modifiers = set()
 is_recording = False
-use_api = True
+use_api = False
 use_openai = False
 if not use_api:
-    w = Whisper.from_pretrained("base.en")
+    model = WhisperModel("base.en", device="cpu", compute_type="int8")
 audio = []
 
 def record_callback(indata, frames, time, status):
     audio.append(indata.copy())
 
 def on_press(key):
-    global alt_pressed, ctrl_pressed, audio, is_recording, stream
+    global current_pressed_modifiers, audio, is_recording, stream
+    
+    if key in MODIFIERS:
+        current_pressed_modifiers.add(key)
 
-    if key == Key.alt:
-        alt_pressed = True
-
-    if key == Key.ctrl:
-        ctrl_pressed = True
-
-    if alt_pressed and ctrl_pressed and key == HOTKEY and not is_recording:
+    if all(modifier in current_pressed_modifiers for modifier in MODIFIERS) and key == HOTKEY and not is_recording:
         is_recording = True
         print("Hotkey pressed. Start recording.")
         audio = []
@@ -47,13 +48,10 @@ def on_press(key):
         stream.start()
 
 def on_release(key):
-    global alt_pressed, ctrl_pressed, audio, is_recording, stream
+    global current_pressed_modifiers, audio, is_recording, stream
 
-    if key == Key.alt:
-        alt_pressed = False
-
-    if key == Key.ctrl:
-        ctrl_pressed = False
+    if key in current_pressed_modifiers:
+        current_pressed_modifiers.remove(key)
 
     if key == HOTKEY and is_recording:
         is_recording = False
@@ -69,9 +67,15 @@ def on_release(key):
                 type_time = time.time()
                 pyperclip.copy(transcript)
                 if platform.system() == "Darwin":
-                    pyautogui.hotkey("command", "shift", "v", interval=0.05)
+                    keyboard.press(Key.cmd)
+                    keyboard.press('v')
+                    keyboard.release('v')
+                    keyboard.release(Key.cmd)
                 else:
-                    pyautogui.hotkey("ctrl", "v")
+                    keyboard.press(Key.ctrl)
+                    keyboard.press('v')
+                    keyboard.release('v')
+                    keyboard.release(Key.ctrl)
                 print(f"Typing transcript took {time.time() - type_time:.2f} seconds")
             else:
                 print("No transcription returned.")
@@ -93,7 +97,7 @@ def transcribe_audio(audio_data, start_time):
             headers = {"Authorization": f"Bearer {api_key}"}
 
             response = requests.post(whisper_api_url, headers=headers, data=data, files=files)
-            print(response.json())
+            #print(response.json())
             if response.status_code == 200:
                 transcript = response.json()["text"]
                 print(f"Processing HTTP request took {time.time() - http_time:.2f} seconds")
@@ -105,7 +109,7 @@ def transcribe_audio(audio_data, start_time):
             headers = {"Authorization": f"Bearer {conjecture_key}"}#, "Content-Type": "multipart/form-data"}
             files = {"file": audio_buffer, "language": "en", "diarize": False, "word_timestamps": False}
             response = requests.post(conjecture_api_url, headers=headers, files=files, verify=False)
-            print(response.json())
+            #print(response.json())
             if response.status_code == 201:
                 transcript = response.json()["data"]["text"]
                 print(f"Processing HTTP request took {time.time() - http_time:.2f} seconds")
@@ -114,7 +118,10 @@ def transcribe_audio(audio_data, start_time):
                 print(f'Error: {response.status_code} - {response.text}')
                 return None
     else:
-        transcript = w.transcribe_from_file("test_sound.wav")
+        segments, _ = model.transcribe(audio_buffer)
+        transcript = ""
+        for segment in segments:
+            transcript += segment.text
         print(f"Processing local transcript took {time.time() - http_time:.2f} seconds")
         return transcript
 
