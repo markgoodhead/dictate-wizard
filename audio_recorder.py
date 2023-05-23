@@ -9,8 +9,12 @@ import wavio
 import io
 import requests
 import numpy as np
+from copy import deepcopy
 from typing import Iterable
-import threading
+from enum import Enum
+from dataclasses import dataclass
+from typing import Set
+from threading import Thread
 import numpy as np
 from pynput.keyboard import Key, KeyCode, Listener, Controller
 import sounddevice as sd
@@ -49,11 +53,37 @@ MODIFIERS = {Key.alt, Key.ctrl}
 keyboard = Controller()
 current_pressed_modifiers = set()
 is_recording = False
-use_api = True
-use_openai = False
+write_recording = False
 audio = []
 model = None
-streaming = True
+start_time = None
+
+class Provider(Enum):
+    OPENAI = "OpenAI"
+    LOCAL_WHISPER = "Local Whisper"
+    CONJECTURE = "Conjecture"
+    SONIOX = "Soniox"
+    
+@dataclass
+class ProviderConfig:
+    main_provider: Provider
+    activated_providers: Set[Provider]
+    
+    def __post_init__(self):
+        if self.main_provider not in self.activated_providers:
+            raise ValueError(f"Main provider {self.main_provider} is not in the set of activated providers")
+    
+provider_config = ProviderConfig(main_provider=Provider.SONIOX, activated_providers={
+    Provider.OPENAI, 
+    Provider.CONJECTURE, 
+    Provider.SONIOX, 
+    Provider.LOCAL_WHISPER})
+
+batch_providers = {Provider.CONJECTURE, Provider.LOCAL_WHISPER, Provider.OPENAI}
+streaming_providers = {Provider.SONIOX}
+
+if Provider.LOCAL_WHISPER in provider_config.activated_providers:
+    model = WhisperModel("base.en", device="cpu", compute_type="int8")
 
 class WrappedLabel(Label):
     def __init__(self, **kwargs):
@@ -175,11 +205,9 @@ class RecorderApp(App):
 audio_queue = Queue()
 
 def record_callback(indata, frames, time, status):
-    global streaming, audio, audio_queue
-    if streaming:
-        audio_queue.put(indata.copy())
-    else:
-        audio.append(indata.copy())
+    global audio, audio_queue
+    audio_queue.put(indata.copy())
+    audio.append(indata.copy())
     
 def iter_audio_queue() -> Iterable[bytes]:
     # This function yields audio data from the queue
@@ -187,7 +215,7 @@ def iter_audio_queue() -> Iterable[bytes]:
         audio = audio_queue.get()
         if audio is None:
             break
-        audio = np.ascontiguousarray(audio, "<h")
+        audio = np.ascontiguousarray(audio.astype(np.int16), "<h")
         audio = audio.tobytes()
         assert isinstance(audio, bytes)
         yield audio
@@ -195,18 +223,35 @@ def iter_audio_queue() -> Iterable[bytes]:
 executor = ThreadPoolExecutor(max_workers=1)
 
 def transcribe_audio_stream():
+    global start_time
     # This function is run in a separate thread and continuously processes audio data
     with SpeechClient() as client:
+        transcript = ""
         for result in transcribe_stream(iter_audio_queue(), 
                                         client, 
                                         audio_format="pcm_s16le", 
                                         sample_rate_hertz=16000, 
                                         num_audio_channels=1):
-            transcript = " ".join(w.text for w in result.words)
-        print_transcript(transcript)
+            for word in result.words:
+                if word.is_final:
+                    text = word.text
+                    if transcript == "":
+                        transcript += text
+                    elif text in [".", "?", "!", ","]:
+                        transcript += text
+                    else:
+                        transcript += " " + text
+        print(f"Transcription from {Provider.SONIOX}: {transcript}")
+        print(f"Processing {Provider.SONIOX} transcription request took {time.time() - start_time:.2f} seconds")
+        if Provider.SONIOX == provider_config.main_provider:
+            print_transcript(transcript)
+            app = App.get_running_app()
+            app.root.processing_status = "Not Processing"
+            app.root.last_translation = f"{transcript}"
+            app.root.processing_time = f"{time.time() - start_time:.2f} seconds"
 
 def on_press(key):
-    global current_pressed_modifiers, audio, is_recording, stream, streaming, HOTKEY, MODIFIERS
+    global current_pressed_modifiers, audio, is_recording, stream, HOTKEY, MODIFIERS, provider_config, batch_providers, streaming_providers
     
     if key in MODIFIERS:
         current_pressed_modifiers.add(key)
@@ -217,13 +262,14 @@ def on_press(key):
         app.root.recording_status = "Recording"
         print("Hotkey pressed. Start recording.")
         audio = []
-        stream = sd.InputStream(samplerate=16000, dtype='int16', channels=1, blocksize=1280, callback=record_callback)
+        stream = sd.InputStream(samplerate=16000, channels=1,
+                                callback=record_callback, dtype='int16', blocksize=1280)
         stream.start()
-        if streaming:
+        if any(provider in provider_config.activated_providers for provider in streaming_providers):
             executor.submit(transcribe_audio_stream)
 
 def on_release(key):
-    global current_pressed_modifiers, audio, audio_queue, is_recording, stream, HOTKEY
+    global current_pressed_modifiers, audio, audio_queue, is_recording, stream, HOTKEY, provider_config, batch_providers, streaming_providers, start_time
 
     if key in current_pressed_modifiers:
         current_pressed_modifiers.remove(key)
@@ -237,25 +283,28 @@ def on_release(key):
         start_time = time.time()
         stream.stop()
         stream.close()
-        if streaming:
+        if any(provider in provider_config.activated_providers for provider in streaming_providers):
             audio_queue.put(None)
-        else:
+        if any(provider in provider_config.activated_providers for provider in batch_providers):
             if audio:
                 audio_data = np.concatenate(audio, axis=0)
-                transcript = transcribe_audio_batch(audio_data, start_time)
-                if transcript:
-                    print_transcript(transcript)
-                    app.root.last_translation = f"{transcript}"
-                    app.root.processing_time = f"{time.time() - start_time:.2f} seconds"
-                else:
-                    print("No transcription returned.")
-            else:
-                print("No audio recorded.")
-        app.root.processing_status = "Not Processing"
+                audio_buffer = io.BytesIO()
+                wavio.write(audio_buffer, audio_data, 16000, sampwidth=2)
+                if write_recording:
+                    wavio.write("last_recording.wav", audio_data, 16000, sampwidth=2)
+                audio_buffer.seek(0)
+                #print(f"Processing audio file took {time.time() - start_time:.2f} seconds")
+                threads = []
+                for provider in provider_config.activated_providers:
+                    if provider in batch_providers:  
+                        t = Thread(target=transcribe_audio_batch, args=(deepcopy(audio_buffer), provider))
+                        t.start()
+                        threads.append(t)
+                for t in threads:
+                    t.join()
+            app.root.processing_status = "Not Processing"
         
 def print_transcript(transcript):
-    print("Transcription:", transcript)
-    type_time = time.time()
     pyperclip.copy(transcript)
     if platform.system() == "Darwin":
         keyboard.press(Key.cmd)
@@ -267,24 +316,22 @@ def print_transcript(transcript):
         keyboard.press('v')
         keyboard.release('v')
         keyboard.release(Key.ctrl)
-    print(f"Typing transcript took {time.time() - type_time:.2f} seconds")
-    return
 
-def transcribe_audio_batch(audio_data, start_time):
-    audio_buffer = io.BytesIO()
-    wavio.write(audio_buffer, audio_data, 16000, sampwidth=2)
-    wavio.write("test_sound.wav", audio_data, 16000, sampwidth=2)
-    audio_buffer.seek(0)
-    http_time = time.time()
-    print(f"Processing audio file took {http_time - start_time:.2f} seconds")
-    if use_api:
-        if use_openai:
-            transcript = openai_transcribe(audio_buffer)
-        else:
-            transcript = conjecture_transcribe(audio_buffer)
-    else:
+def transcribe_audio_batch(audio_buffer, provider):
+    global provider_config, start_time
+    if provider == Provider.CONJECTURE:
+        transcript = conjecture_transcribe(audio_buffer)
+    elif provider == Provider.LOCAL_WHISPER:
         transcript = local_whisper_transcribe(audio_buffer)
-    print(f"Processing transcription request took {time.time() - http_time:.2f} seconds")
+    elif provider == Provider.OPENAI:
+        transcript = openai_transcribe(audio_buffer)
+    if provider == provider_config.main_provider and transcript:
+        print_transcript(transcript)
+        app = App.get_running_app()
+        app.root.last_translation = f"{transcript}"
+        app.root.processing_time = f"{time.time() - start_time:.2f} seconds"
+    print(f"Transcription from {provider}: {transcript}")
+    print(f"Processing {provider} transcription request took {time.time() - start_time:.2f} seconds")
     return transcript
     
 def local_whisper_transcribe(audio_buffer):
@@ -328,7 +375,7 @@ def start_listener():
         listener.join()
 
 if __name__ == '__main__':
-    listener_thread = threading.Thread(target=start_listener, daemon=True)
+    listener_thread = Thread(target=start_listener, daemon=True)
     listener_thread.start()
     print("Press ctrl + alt + x to start recording.")
     RecorderApp().run()
