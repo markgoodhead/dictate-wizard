@@ -1,5 +1,3 @@
-api_key = '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'
-conjecture_key = 'sk-m42iTB1N0w0kNM0QzeOA'
 import os
 os.environ['WM_CLASS'] = "Dictate Wizard"
 os.environ['SDL_VIDEO_X11_WMCLASS'] = "Dictate Wizard"
@@ -7,6 +5,7 @@ if cores := os.cpu_count():
     os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
 import io
+import json
 import requests
 import numpy as np
 from copy import deepcopy
@@ -46,7 +45,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 whisper_api_url = 'https://api.openai.com/v1/audio/transcriptions'
 conjecture_api_url = 'https://api.conjecture.dev/transcribe'
-set_api_key("a5a8475630adcccc88eff3788828b8bc39feeb26ce1fefba904fa51d121806cb")
+
+openai_key = ''
+conjecture_key = ''
+soniox_key = ''
 
 HOTKEY = KeyCode.from_char('x')
 MODIFIERS = {Key.alt, Key.ctrl}
@@ -100,34 +102,43 @@ class RecorderGUI(BoxLayout):
     modifiers = StringProperty("ctrl+alt")
     recording_status = StringProperty("Not Recording")
     processing_status = StringProperty("Not Processing")
+    openai_key = StringProperty("")
+    conjecture_key = StringProperty("")
+    soniox_key = StringProperty("")
 
     def __init__(self, **kwargs):
         super(RecorderGUI, self).__init__(**kwargs)
         self.orientation = 'vertical'
         self.spacing = 10
         self.padding = 10
+        
+        self.load_api_keys()
 
         with self.canvas.before:
             Color(*get_color_from_hex("#0C1441"))
             self.rect = Rectangle(size=self.size, pos=self.pos)
         self.bind(size=self._update_rect, pos=self._update_rect)
         
-        def create_label(text):
-            return Label(text=text, font_size='16sp', color=get_color_from_hex("#D1D1D1"))  # Light grey text
+        def create_label(text, font_size='15sp'):
+            return Label(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))  # Light grey text
         
-        def create_input(text, on_validate):
+        def create_wrapped_label(text, font_size='15sp'):
+            return WrappedLabel(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))
+        
+        def create_input(text, on_validate, font_size='15sp'):
             input_field = TextInput(
                 text=text, multiline=False, 
                 size_hint_y=None, height=60, halign="center",
                 background_color=get_color_from_hex("#5B5B5B"),  # Darker grey input background
                 foreground_color=get_color_from_hex("#D1D1D1"),  # Light grey input text
-                cursor_color=get_color_from_hex("#C67DD4"))  # Purple cursor
+                cursor_color=get_color_from_hex("#C67DD4"),  # Purple cursor
+                font_size=font_size)
             input_field.bind(on_text_validate=on_validate)
             return input_field
 
         last_translation_layout = BoxLayout(orientation='horizontal', height=60)
         last_translation_layout.add_widget(create_label(text="Last transcription:"))
-        self.last_translation_label = WrappedLabel(text=self.last_translation, font_name='Roboto', font_size='12sp', color=get_color_from_hex("#D1D1D1"))
+        self.last_translation_label = create_wrapped_label(text=self.last_translation, font_size='12sp')
         last_translation_layout.add_widget(self.last_translation_label)
         self.add_widget(last_translation_layout)
 
@@ -164,6 +175,31 @@ class RecorderGUI(BoxLayout):
         self.modifiers_value = create_label(text=self.modifiers)
         modifiers_layout.add_widget(self.modifiers_value)
         self.add_widget(modifiers_layout)
+        
+        openai_key_layout = BoxLayout(orientation='horizontal', height=60)
+        openai_key_layout.add_widget(create_label(text="OpenAI Key:"))
+        self.openai_key_input = create_input(text=self.openai_key, on_validate=self.on_openai_key_validate)
+        openai_key_layout.add_widget(self.openai_key_input)
+        self.openai_key_value = create_wrapped_label(text=self.openai_key, font_size='8sp')
+        openai_key_layout.add_widget(self.openai_key_value)
+        self.add_widget(openai_key_layout)
+
+        conjecture_key_layout = BoxLayout(orientation='horizontal', height=60)
+        conjecture_key_layout.add_widget(create_label(text="Conjecture Key:"))
+        self.conjecture_key_input = create_input(text=self.conjecture_key, on_validate=self.on_conjecture_key_validate)
+        conjecture_key_layout.add_widget(self.conjecture_key_input)
+        self.conjecture_key_value = create_wrapped_label(text=self.conjecture_key, font_size='8sp')
+        conjecture_key_layout.add_widget(self.conjecture_key_value)
+        self.add_widget(conjecture_key_layout)
+        
+        soniox_key_layout = BoxLayout(orientation='horizontal', height=60)
+        soniox_key_layout.add_widget(create_label(text="Soniox Key:"))
+        self.soniox_key_input = create_input(text=self.soniox_key, on_validate=self.on_soniox_key_validate)
+        soniox_key_layout.add_widget(self.soniox_key_input)
+        self.soniox_key_value = create_wrapped_label(text=self.soniox_key, font_size='8sp')
+        soniox_key_layout.add_widget(self.soniox_key_value)
+        self.add_widget(soniox_key_layout)
+
 
         self.bind(recording_status=self.recording_status_label.setter('text'))
         self.bind(processing_status=self.processing_status_label.setter('text'))
@@ -171,10 +207,53 @@ class RecorderGUI(BoxLayout):
         self.bind(processing_time=self.processing_time_label.setter('text'))
         self.bind(hotkey=self.hotkey_value.setter('text'))
         self.bind(modifiers=self.modifiers_value.setter('text'))
+        self.bind(openai_key=self.openai_key_value.setter('text'))
+        self.bind(conjecture_key=self.conjecture_key_value.setter('text'))
+        self.bind(soniox_key=self.soniox_key_value.setter('text'))
+
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
+        
+    def load_api_keys(self):
+        global openai_key, conjecture_key, soniox_key
+        try:
+            with open("api_keys.json", "r") as f:
+                config = json.load(f)
+            self.openai_key = config["openai_key"]
+            openai_key = config["openai_key"]
+            self.conjecture_key = config["conjecture_key"]
+            conjecture_key = config["conjecture_key"]
+            self.soniox_key = config["soniox_key"]
+            soniox_key = config["soniox_key"]
+            set_api_key(soniox_key)
+        except (FileNotFoundError, KeyError):
+            print("API keys not found, please enter them manually")
+        
+    def save_api_keys(self, openai_key, conjecture_key, soniox_key):
+        config = {"openai_key": openai_key, "conjecture_key": conjecture_key, "soniox_key": soniox_key}
+        with open("api_keys.json", "w") as f:
+            json.dump(config, f)
+            
+    def on_openai_key_validate(self, instance):
+        global openai_key
+        openai_key = instance.text
+        self.openai_key = openai_key
+        self.save_api_keys(openai_key, conjecture_key, soniox_key)
+
+    def on_conjecture_key_validate(self, instance):
+        global conjecture_key
+        conjecture_key = instance.text
+        self.conjecture_key = conjecture_key
+        self.save_api_keys(openai_key, conjecture_key, soniox_key)
+    
+    def on_soniox_key_validate(self, instance):
+        global soniox_key
+        soniox_key = instance.text
+        self.soniox_key = soniox_key
+        set_api_key(soniox_key)
+        self.save_api_keys(openai_key, conjecture_key, soniox_key)
 
     def on_hotkey_validate(self, instance):
         self.update_hotkey_and_modifiers(instance.text, self.modifiers_input.text)
@@ -347,7 +426,7 @@ def local_whisper_transcribe(audio_buffer):
 def openai_transcribe(audio_buffer):
     files = {"file": ("audio.wav", audio_buffer, "audio/wav")}
     data = {"model": "whisper-1"}
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {openai_key}"}
 
     response = requests.post(whisper_api_url, headers=headers, data=data, files=files)
     #print(response.json())
