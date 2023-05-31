@@ -3,3 +3,4 @@ api_keys.json
 *.ttf
 *.wav
 .DS_Store
+api_keys copy.json

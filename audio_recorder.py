@@ -7,6 +7,7 @@ import wavio
 import io
 import json
 import requests
+from functools import partial
 import numpy as np
 from copy import deepcopy
 from typing import Iterable
@@ -27,28 +28,29 @@ from queue import Queue
 from soniox.transcribe_live import transcribe_stream
 from soniox.speech_service import SpeechClient, set_api_key
 from kivy.config import Config
-Config.set('graphics', 'width', '400')
+Config.set('graphics', 'width', '600')
 Config.set('graphics', 'height', '300')
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics import Color, Rectangle
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
-from kivy.properties import StringProperty
+from kivy.properties import StringProperty, DictProperty
 from kivy.core.text import LabelBase
 from kivy.utils import get_color_from_hex
+from kivy.uix.modalview import ModalView
+from kivy.uix.checkbox import CheckBox
+from kivy.uix.button import Button
+from kivy.uix.dropdown import DropDown
 
 LabelBase.register(name='Roboto',
                    fn_regular='Roboto-Regular.ttf')
 
+# Needed for Conjecture API
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 whisper_api_url = 'https://api.openai.com/v1/audio/transcriptions'
 conjecture_api_url = 'https://api.conjecture.dev/transcribe'
-
-openai_key = ''
-conjecture_key = ''
-soniox_key = ''
 
 HOTKEY = KeyCode.from_char('x')
 MODIFIERS = {Key.alt, Key.ctrl}
@@ -73,7 +75,7 @@ class ProviderConfig:
     
     def __post_init__(self):
         if self.main_provider not in self.activated_providers:
-            raise ValueError(f"Main provider {self.main_provider} is not in the set of activated providers")
+            raise ValueError(f"Main provider {self.main_provider.value} is not in the set of activated providers")
     
 provider_config = ProviderConfig(main_provider=Provider.SONIOX, activated_providers={
     Provider.OPENAI, 
@@ -86,7 +88,8 @@ streaming_providers = {Provider.SONIOX}
 
 if Provider.LOCAL_WHISPER in provider_config.activated_providers:
     model = WhisperModel("base.en", device="cpu", compute_type="int8")
-
+    
+provider_keys = {provider.name: "" for provider in Provider}
 class WrappedLabel(Label):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -95,16 +98,51 @@ class WrappedLabel(Label):
             self.setter('text_size')(self, (self.width, None)),
             texture_size=lambda *x: self.setter('height')(self, self.texture_size[1]))
 
+def create_property(name):
+    return StringProperty()
+
+def create_label(text, font_size='15sp', grey=True, underlined=False):
+    if underlined:
+        text = f"[u]{text}[/u]"
+    if grey:
+        return Label(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"), markup=True)  # Light grey text
+    else:
+        return Label(text=text, font_size=font_size, markup=True)
+
+def create_wrapped_label(text, font_size='15sp'):
+    return WrappedLabel(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))
+
+def create_input(text, on_validate, font_size='15sp'):
+    input_field = TextInput(
+        text=text, multiline=False, 
+        size_hint_y=None, height=60, halign="center",
+        background_color=get_color_from_hex("#5B5B5B"),  # Darker grey input background
+        foreground_color=get_color_from_hex("#D1D1D1"),  # Light grey input text
+        cursor_color=get_color_from_hex("#C67DD4"),  # Purple cursor
+        font_size=font_size)
+    input_field.bind(on_text_validate=on_validate)
+    return input_field
+
+def create_button(text, font_size='15sp', height=60):
+    button = Button(
+        text=text,
+        size_hint_y=None,
+        height=height,
+        color=get_color_from_hex("#D1D1D1"),
+        font_size=font_size
+    )
+    return button
+
 class RecorderGUI(BoxLayout):
-    last_translation = StringProperty("")
-    processing_time = StringProperty("")
     hotkey = StringProperty("x")
     modifiers = StringProperty("ctrl+alt")
     recording_status = StringProperty("Not Recording")
     processing_status = StringProperty("Not Processing")
-    openai_key = StringProperty("")
-    conjecture_key = StringProperty("")
-    soniox_key = StringProperty("")
+    provider_keys = DictProperty({provider.name: "" for provider in Provider})
+    provider_last_transcription = DictProperty({provider.name: "" for provider in Provider})
+    provider_processing_time = DictProperty({provider.name: "" for provider in Provider})
+    for provider in Provider:
+        locals()[f"{provider.name.lower()}_key"] = create_property(provider.name)
 
     def __init__(self, **kwargs):
         super(RecorderGUI, self).__init__(**kwargs)
@@ -112,41 +150,14 @@ class RecorderGUI(BoxLayout):
         self.spacing = 10
         self.padding = 10
         
+        self.provider_buttons = []
+        
         self.load_api_keys()
 
         with self.canvas.before:
             Color(*get_color_from_hex("#0C1441"))
             self.rect = Rectangle(size=self.size, pos=self.pos)
         self.bind(size=self._update_rect, pos=self._update_rect)
-        
-        def create_label(text, font_size='15sp'):
-            return Label(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))  # Light grey text
-        
-        def create_wrapped_label(text, font_size='15sp'):
-            return WrappedLabel(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))
-        
-        def create_input(text, on_validate, font_size='15sp'):
-            input_field = TextInput(
-                text=text, multiline=False, 
-                size_hint_y=None, height=60, halign="center",
-                background_color=get_color_from_hex("#5B5B5B"),  # Darker grey input background
-                foreground_color=get_color_from_hex("#D1D1D1"),  # Light grey input text
-                cursor_color=get_color_from_hex("#C67DD4"),  # Purple cursor
-                font_size=font_size)
-            input_field.bind(on_text_validate=on_validate)
-            return input_field
-
-        last_translation_layout = BoxLayout(orientation='horizontal', height=60)
-        last_translation_layout.add_widget(create_label(text="Last transcription:"))
-        self.last_translation_label = create_wrapped_label(text=self.last_translation, font_size='12sp')
-        last_translation_layout.add_widget(self.last_translation_label)
-        self.add_widget(last_translation_layout)
-
-        processing_time_layout = BoxLayout(orientation='horizontal', height=60)
-        processing_time_layout.add_widget(create_label(text="Processing Time:"))
-        self.processing_time_label = create_label(text=self.processing_time)
-        processing_time_layout.add_widget(self.processing_time_label)
-        self.add_widget(processing_time_layout)
 
         recording_status_layout = BoxLayout(orientation='horizontal', height=60)
         recording_status_layout.add_widget(create_label(text="Recording status:"))
@@ -176,84 +187,164 @@ class RecorderGUI(BoxLayout):
         modifiers_layout.add_widget(self.modifiers_value)
         self.add_widget(modifiers_layout)
         
-        openai_key_layout = BoxLayout(orientation='horizontal', height=60)
-        openai_key_layout.add_widget(create_label(text="OpenAI Key:"))
-        self.openai_key_input = create_input(text=self.openai_key, on_validate=self.on_openai_key_validate)
-        openai_key_layout.add_widget(self.openai_key_input)
-        self.openai_key_value = create_wrapped_label(text=self.openai_key, font_size='8sp')
-        openai_key_layout.add_widget(self.openai_key_value)
-        self.add_widget(openai_key_layout)
-
-        conjecture_key_layout = BoxLayout(orientation='horizontal', height=60)
-        conjecture_key_layout.add_widget(create_label(text="Conjecture Key:"))
-        self.conjecture_key_input = create_input(text=self.conjecture_key, on_validate=self.on_conjecture_key_validate)
-        conjecture_key_layout.add_widget(self.conjecture_key_input)
-        self.conjecture_key_value = create_wrapped_label(text=self.conjecture_key, font_size='8sp')
-        conjecture_key_layout.add_widget(self.conjecture_key_value)
-        self.add_widget(conjecture_key_layout)
+        self.provider_modal_view = ModalView(size_hint=(0.8, 0.8))
+        # Create a layout for the contents of the ModalView
+        provider_layout = BoxLayout(orientation='vertical')
+        # Create an item for each provider
+        for provider in Provider:
+            # Each item is a horizontal box with a label and a checkbox
+            box = BoxLayout(orientation='horizontal')
+            box.add_widget(Label(text=provider.value))
+            checkbox = CheckBox(active=provider in provider_config.activated_providers)
+            checkbox.bind(active=partial(self.on_provider_check, provider))
+            box.add_widget(checkbox)
+            provider_layout.add_widget(box)
+        self.provider_modal_view.add_widget(provider_layout)
+        # Create a button that opens the ModalView
+        self.provider_modal_button = create_button(text='Select Active Providers')
+        self.provider_modal_button.bind(on_release=self.provider_modal_view.open)
         
-        soniox_key_layout = BoxLayout(orientation='horizontal', height=60)
-        soniox_key_layout.add_widget(create_label(text="Soniox Key:"))
-        self.soniox_key_input = create_input(text=self.soniox_key, on_validate=self.on_soniox_key_validate)
-        soniox_key_layout.add_widget(self.soniox_key_input)
-        self.soniox_key_value = create_wrapped_label(text=self.soniox_key, font_size='8sp')
-        soniox_key_layout.add_widget(self.soniox_key_value)
-        self.add_widget(soniox_key_layout)
-
+        # Create a dropdown for selecting the main provider
+        self.provider_dropdown = DropDown()
+        # When a provider is selected from the dropdown, it becomes the main provider
+        self.provider_dropdown.bind(on_select=self.on_provider_dropdown_select)
+        # Create a button that opens the dropdown
+        self.provider_dropdown_button = create_button(text=f'Selected Main Provider: {provider_config.main_provider.value}')
+        self.provider_dropdown_button.bind(on_release=self.provider_dropdown.open)
+        
+        provider_buttons_layout = BoxLayout(orientation='horizontal', height=60)
+        provider_buttons_layout.add_widget(self.provider_modal_button)
+        provider_buttons_layout.add_widget(self.provider_dropdown_button)
+        self.add_widget(provider_buttons_layout)
+        
+        titles_layout = BoxLayout(orientation='horizontal', height=60)
+        titles_layout.add_widget(create_label(text="Providers", underlined=True))
+        titles_layout.add_widget(create_label(text="Transcription", underlined=True))
+        titles_layout.add_widget(create_label(text="Processing Time", underlined=True))
+        titles_layout.add_widget(create_label(text="API Key Input", underlined=True))
+        titles_layout.add_widget(create_label(text="API Key", underlined=True))
+        self.add_widget(titles_layout)
+        
+        for provider in Provider:
+            self.on_provider_check(provider, None, provider in provider_config.activated_providers)
 
         self.bind(recording_status=self.recording_status_label.setter('text'))
         self.bind(processing_status=self.processing_status_label.setter('text'))
-        self.bind(last_translation=self.last_translation_label.setter('text'))
-        self.bind(processing_time=self.processing_time_label.setter('text'))
         self.bind(hotkey=self.hotkey_value.setter('text'))
         self.bind(modifiers=self.modifiers_value.setter('text'))
-        self.bind(openai_key=self.openai_key_value.setter('text'))
-        self.bind(conjecture_key=self.conjecture_key_value.setter('text'))
-        self.bind(soniox_key=self.soniox_key_value.setter('text'))
+        
+    def on_provider_dropdown_select(self, instance, x):
+        # Get the Provider enum member with this name
+        selected_provider = Provider[x.upper().replace(" ", "_")]
+        # Set it as the main provider
+        provider_config.main_provider = selected_provider
+        # Update the text on the dropdown button
+        self.provider_dropdown_button.text = f'Selected Main Provider: {selected_provider.value}'
+        
+    def on_provider_check(self, provider, instance, value):
+        if value:
+            provider_config.activated_providers.add(provider)
+            self.create_provider_ui(provider)
+            # When a provider is activated, add it to the dropdown
+            btn = create_button(text=provider.value, height=50)
+            btn.bind(on_release=lambda btn: self.provider_dropdown.select(btn.text))
+            self.provider_dropdown.add_widget(btn)
+            self.provider_buttons.append(btn)  # Store the button reference
+        else:
+            provider_config.activated_providers.discard(provider)
+            self.clear_provider_ui(provider)
+            # When a provider is deactivated, remove its corresponding button from the dropdown
+            for btn in self.provider_buttons:
+                if btn.text == provider.value:
+                    self.provider_dropdown.remove_widget(btn)
+                    self.provider_buttons.remove(btn)  # Remove the button reference
+                    break
+            if provider == provider_config.main_provider:
+                # If the main provider was deactivated, set the first activated provider as the main provider
+                provider_config.main_provider = next(iter(provider_config.activated_providers), None)
+                self.provider_dropdown_button.text = f'Selected Main Provider: {provider_config.main_provider.value}'
 
+    def update_provider_key_value(self, provider):
+        def update_text(*args):
+            setattr(self, f"{provider.name.lower()}_key", self.provider_keys[provider.name])
+            getattr(self, f"{provider.name.lower()}_key_value").text = self.provider_keys[provider.name]
+        return update_text
+    
+    def update_provider_transcription_value(self, provider):
+        def update_text(*args):
+            getattr(self, f"{provider.name.lower()}_last_transcription").text = self.provider_last_transcription[provider.name]
+        return update_text
+
+    def update_provider_processing_time_value(self, provider):
+        def update_text(*args):
+            getattr(self, f"{provider.name.lower()}_processing_time").text = self.provider_processing_time[provider.name]
+        return update_text
+    
+    def create_provider_ui(self, provider):
+        setattr(self, f"{provider.name.lower()}_key", self.provider_keys[provider.name])
+
+        key_layout = BoxLayout(orientation='horizontal', height=60)
+        key_layout.add_widget(create_label(text=f"{provider.value}"))
+        
+        last_transcription_label = create_wrapped_label(text=self.provider_last_transcription[provider.name], font_size='8sp')
+        setattr(self, f"{provider.name.lower()}_last_transcription", last_transcription_label)
+        key_layout.add_widget(last_transcription_label)
+
+        processing_time_label = create_label(text=self.provider_processing_time[provider.name])
+        setattr(self, f"{provider.name.lower()}_processing_time", processing_time_label)
+        key_layout.add_widget(processing_time_label)
+        key_input = create_input(text=self.provider_keys[provider.name], 
+                                on_validate=partial(self.on_key_validate, provider))
+        setattr(self, f"{provider.name.lower()}_key_input", key_input)
+        key_layout.add_widget(key_input)
+        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='8sp')
+        setattr(self, f"{provider.name.lower()}_key_value", key_value)
+        key_layout.add_widget(key_value)
+
+        self.add_widget(key_layout)
+        setattr(self, f"{provider.name.lower()}_key_layout", key_layout)
+        #key_value = getattr(self, f"{provider.name.lower()}_key_value")
+        self.bind(**{f"{provider.name.lower()}_key": key_value.setter('text')})
+        self.bind(provider_keys=self.update_provider_key_value(provider))
+        self.bind(provider_last_transcription=self.update_provider_transcription_value(provider))
+        self.bind(provider_processing_time=self.update_provider_processing_time_value(provider))
+        
+    def clear_provider_ui(self, provider):
+        key_layout = getattr(self, f"{provider.name.lower()}_key_layout")
+        self.remove_widget(key_layout)
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
         
     def load_api_keys(self):
-        global openai_key, conjecture_key, soniox_key
+        global provider_keys
         try:
             with open("api_keys.json", "r") as f:
                 config = json.load(f)
-            self.openai_key = config["openai_key"]
-            openai_key = config["openai_key"]
-            self.conjecture_key = config["conjecture_key"]
-            conjecture_key = config["conjecture_key"]
-            self.soniox_key = config["soniox_key"]
-            soniox_key = config["soniox_key"]
-            set_api_key(soniox_key)
+            for provider in Provider:
+                self.provider_keys[provider.name] = config[provider.name.lower() + "_key"]
+                provider_keys[provider.name] = config[provider.name.lower() + "_key"]
+            set_api_key(provider_keys["SONIOX"])
         except (FileNotFoundError, KeyError):
             print("API keys not found, please enter them manually")
         
-    def save_api_keys(self, openai_key, conjecture_key, soniox_key):
-        config = {"openai_key": openai_key, "conjecture_key": conjecture_key, "soniox_key": soniox_key}
+    def save_api_keys(self, provider_keys):
+        config = {provider.lower() + "_key": key for provider, key in provider_keys.items()}
         with open("api_keys.json", "w") as f:
             json.dump(config, f)
             
-    def on_openai_key_validate(self, instance):
-        global openai_key
-        openai_key = instance.text
-        self.openai_key = openai_key
-        self.save_api_keys(openai_key, conjecture_key, soniox_key)
+    def on_key_validate(self, provider, instance):
+        global provider_keys
 
-    def on_conjecture_key_validate(self, instance):
-        global conjecture_key
-        conjecture_key = instance.text
-        self.conjecture_key = conjecture_key
-        self.save_api_keys(openai_key, conjecture_key, soniox_key)
-    
-    def on_soniox_key_validate(self, instance):
-        global soniox_key
-        soniox_key = instance.text
-        self.soniox_key = soniox_key
-        set_api_key(soniox_key)
-        self.save_api_keys(openai_key, conjecture_key, soniox_key)
+        provider_keys[provider.name] = instance.text
+        self.provider_keys[provider.name] = instance.text
+
+        # If the provider is SONIOX, update the API key
+        if provider == Provider.SONIOX:
+            set_api_key(instance.text)
+
+        self.save_api_keys(provider_keys)
 
     def on_hotkey_validate(self, instance):
         self.update_hotkey_and_modifiers(instance.text, self.modifiers_input.text)
@@ -320,14 +411,14 @@ def transcribe_audio_stream():
                         transcript += text
                     else:
                         transcript += " " + text
-        print(f"Transcription from {Provider.SONIOX}: {transcript}")
-        print(f"Processing {Provider.SONIOX} transcription request took {time.time() - start_time:.2f} seconds")
+        print(f"Transcription from {Provider.SONIOX.value}: {transcript}")
+        print(f"Processing {Provider.SONIOX.value} transcription request took {time.time() - start_time:.2f} seconds")
+        app = App.get_running_app()
+        app.root.provider_last_transcription[Provider.SONIOX.name] = f"{transcript}"
+        app.root.provider_processing_time[Provider.SONIOX.name] = f"{time.time() - start_time:.2f} s"
         if Provider.SONIOX == provider_config.main_provider:
             print_transcript(transcript)
-            app = App.get_running_app()
             app.root.processing_status = "Not Processing"
-            app.root.last_translation = f"{transcript}"
-            app.root.processing_time = f"{time.time() - start_time:.2f} seconds"
 
 def on_press(key):
     global current_pressed_modifiers, audio, is_recording, stream, HOTKEY, MODIFIERS, provider_config, batch_providers, streaming_providers
@@ -404,13 +495,13 @@ def transcribe_audio_batch(audio_buffer, provider):
         transcript = local_whisper_transcribe(audio_buffer)
     elif provider == Provider.OPENAI:
         transcript = openai_transcribe(audio_buffer)
+    app = App.get_running_app()
+    app.root.provider_last_transcription[provider.name] = f"{transcript}"
+    app.root.provider_processing_time[provider.name] = f"{time.time() - start_time:.2f} s"
     if provider == provider_config.main_provider and transcript:
         print_transcript(transcript)
-        app = App.get_running_app()
-        app.root.last_translation = f"{transcript}"
-        app.root.processing_time = f"{time.time() - start_time:.2f} seconds"
-    print(f"Transcription from {provider}: {transcript}")
-    print(f"Processing {provider} transcription request took {time.time() - start_time:.2f} seconds")
+    print(f"Transcription from {provider.value}: {transcript}")
+    print(f"Processing {provider.value} transcription request took {time.time() - start_time:.2f} seconds")
     return transcript
     
 def local_whisper_transcribe(audio_buffer):
@@ -421,12 +512,12 @@ def local_whisper_transcribe(audio_buffer):
     transcript = ""
     for segment in segments:
         transcript += segment.text
-    return transcript
+    return transcript.lstrip()
     
 def openai_transcribe(audio_buffer):
     files = {"file": ("audio.wav", audio_buffer, "audio/wav")}
     data = {"model": "whisper-1"}
-    headers = {"Authorization": f"Bearer {openai_key}"}
+    headers = {"Authorization": f"Bearer {provider_keys[Provider.OPENAI.name]}"}
 
     response = requests.post(whisper_api_url, headers=headers, data=data, files=files)
     #print(response.json())
@@ -438,7 +529,7 @@ def openai_transcribe(audio_buffer):
         return None
     
 def conjecture_transcribe(audio_buffer):
-    headers = {"Authorization": f"Bearer {conjecture_key}"}#, "Content-Type": "multipart/form-data"}
+    headers = {"Authorization": f"Bearer {provider_keys[Provider.CONJECTURE.name]}"}
     files = {"file": audio_buffer, "language": "en", "diarize": False, "word_timestamps": False}
     response = requests.post(conjecture_api_url, headers=headers, files=files, verify=False)
     #print(response.json())
