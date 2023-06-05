@@ -21,6 +21,8 @@ Suggestions for alternative providers to be added are welcome (please open an Is
 
 Soniox is the only provider supported in 'streaming' mode, i.e. the transcription happens concurrently with the audio recording. As such it's the fastest provider in the list to return an output as both the local Whisper and the other providers are all processed in a sequential fashion.
 
+The local Whisper functionality is provided by https://github.com/guillaumekln/faster-whisper. It uses the base.en model as this is competitive in transcription time with the API providers. 
+
 ## Usage
 1. Clone this repository:
 
@@ -52,6 +54,17 @@ sudo python main.py
 
 ## How to Contribute
 Contributions are welcome! Please feel free to submit a pull request or open an issue. For major changes, please open an issue first to discuss what you would like to change.
+
+## Roadmap
+
+Wishlist for improvements:
+- Support CoreML and GPUs for faster local Whisper inference
+- Support streaming for local Whisper inference
+- Enable selecting larger Whisper models locally (would require performance improvements to make practical)
+- Test Windows and Linux versions
+- Package Dictate Wizard up into a deployable, e.g. with PyInstaller
+
+Feature requests welcomed too; please make an Issue or discuss in the Discord server.
 
 ## License
 This project is licensed under the GNU General Public License v3.0 License. See the `LICENSE` file for more details.
