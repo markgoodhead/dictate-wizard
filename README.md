@@ -38,10 +38,10 @@ cd dictate-wizard
 pip install -r requirements.txt
 ```
 
-4. Run the app:
+4. Run the app (recommended in sudo mode for now due to needing file write permissions - this is to be improved!):
 
 ```bash
-python main.py
+sudo python main.py
 ```
 
 5. Use the GUI to configure your API keys, select the providers you wish to use, and designate your hotkey and modifiers.
