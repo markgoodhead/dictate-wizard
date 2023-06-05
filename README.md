@@ -1,6 +1,8 @@
-# 🪄 Dictate Wizard 🪄
+# 🪄 Dictate Wizard 🪄 
 
 ![Logo](dictate_wizard.ico)
+
+![Discord Shield](https://discordapp.com/api/guilds/1115298962757402665/widget.png?style=shield)
 
 Dictate Wizard is an open source dictation tool. The goal is to obsolete as much typing as possible and let you speak your emails, instant messages etc instead.
 
