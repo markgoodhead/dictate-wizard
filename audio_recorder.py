@@ -1,6 +1,4 @@
 import os
-os.environ['WM_CLASS'] = "Dictate Wizard"
-os.environ['SDL_VIDEO_X11_WMCLASS'] = "Dictate Wizard"
 if cores := os.cpu_count():
     os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
@@ -29,22 +27,18 @@ from soniox.transcribe_live import transcribe_stream
 from soniox.speech_service import SpeechClient, set_api_key
 from kivy.config import Config
 Config.set('graphics', 'width', '600')
-Config.set('graphics', 'height', '300')
+Config.set('graphics', 'height', '400')
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics import Color, Rectangle
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.properties import StringProperty, DictProperty
-from kivy.core.text import LabelBase
 from kivy.utils import get_color_from_hex
 from kivy.uix.modalview import ModalView
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
-
-LabelBase.register(name='Roboto',
-                   fn_regular='Roboto-Regular.ttf')
 
 # Needed for Conjecture API
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -63,8 +57,8 @@ model = None
 start_time = None
 
 class Provider(Enum):
-    OPENAI = "OpenAI"
     LOCAL_WHISPER = "Local Whisper"
+    OPENAI = "OpenAI"
     CONJECTURE = "Conjecture"
     SONIOX = "Soniox"
     
@@ -77,17 +71,19 @@ class ProviderConfig:
         if self.main_provider not in self.activated_providers:
             raise ValueError(f"Main provider {self.main_provider.value} is not in the set of activated providers")
     
-provider_config = ProviderConfig(main_provider=Provider.SONIOX, activated_providers={
+provider_config = ProviderConfig(main_provider=Provider.LOCAL_WHISPER, activated_providers={
+    Provider.LOCAL_WHISPER,
     Provider.OPENAI, 
     Provider.CONJECTURE, 
-    Provider.SONIOX, 
-    Provider.LOCAL_WHISPER})
+    Provider.SONIOX})
 
 batch_providers = {Provider.CONJECTURE, Provider.LOCAL_WHISPER, Provider.OPENAI}
 streaming_providers = {Provider.SONIOX}
 
-if Provider.LOCAL_WHISPER in provider_config.activated_providers:
-    model = WhisperModel("base.en", device="cpu", compute_type="int8")
+def make_whisper_model():
+    return WhisperModel("base.en", device="cpu", compute_type="int8")
+
+model = make_whisper_model()
     
 provider_keys = {provider.name: "" for provider in Provider}
 class WrappedLabel(Label):
@@ -101,20 +97,17 @@ class WrappedLabel(Label):
 def create_property(name):
     return StringProperty()
 
-def create_label(text, font_size='15sp', grey=True, underlined=False):
+def create_label(text, font_size='15sp', underlined=False, size_hint_x=1.0):
     if underlined:
         text = f"[u]{text}[/u]"
-    if grey:
-        return Label(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"), markup=True)  # Light grey text
-    else:
-        return Label(text=text, font_size=font_size, markup=True)
+    return Label(text=text, font_size=font_size, size_hint_x=size_hint_x, color=get_color_from_hex("#D1D1D1"), markup=True)  # Light grey text
 
-def create_wrapped_label(text, font_size='15sp'):
-    return WrappedLabel(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"))
+def create_wrapped_label(text, font_size='15sp', size_hint_x=1.0):
+    return WrappedLabel(text=text, font_size=font_size, color=get_color_from_hex("#D1D1D1"), size_hint_x=size_hint_x)
 
-def create_input(text, on_validate, font_size='15sp'):
+def create_input(text, on_validate, font_size='15sp', size_hint_x=1.0):
     input_field = TextInput(
-        text=text, multiline=False, 
+        text=text, multiline=False, size_hint_x=size_hint_x,
         size_hint_y=None, height=60, halign="center",
         background_color=get_color_from_hex("#5B5B5B"),  # Darker grey input background
         foreground_color=get_color_from_hex("#D1D1D1"),  # Light grey input text
@@ -147,8 +140,8 @@ class RecorderGUI(BoxLayout):
     def __init__(self, **kwargs):
         super(RecorderGUI, self).__init__(**kwargs)
         self.orientation = 'vertical'
-        self.spacing = 10
-        self.padding = 10
+        self.spacing = 20
+        self.padding = 20
         
         self.provider_buttons = []
         
@@ -218,11 +211,11 @@ class RecorderGUI(BoxLayout):
         self.add_widget(provider_buttons_layout)
         
         titles_layout = BoxLayout(orientation='horizontal', height=60)
-        titles_layout.add_widget(create_label(text="Providers", underlined=True))
+        titles_layout.add_widget(create_label(text="Providers", underlined=True, size_hint_x=0.5))
         titles_layout.add_widget(create_label(text="Transcription", underlined=True))
-        titles_layout.add_widget(create_label(text="Processing Time", underlined=True))
-        titles_layout.add_widget(create_label(text="API Key Input", underlined=True))
-        titles_layout.add_widget(create_label(text="API Key", underlined=True))
+        titles_layout.add_widget(create_label(text="Timing", underlined=True, size_hint_x=0.3))
+        titles_layout.add_widget(create_label(text="API Key Input", underlined=True, size_hint_x=0.5))
+        titles_layout.add_widget(create_label(text="API Key", underlined=True, size_hint_x=0.5))
         self.add_widget(titles_layout)
         
         for provider in Provider:
@@ -234,11 +227,8 @@ class RecorderGUI(BoxLayout):
         self.bind(modifiers=self.modifiers_value.setter('text'))
         
     def on_provider_dropdown_select(self, instance, x):
-        # Get the Provider enum member with this name
         selected_provider = Provider[x.upper().replace(" ", "_")]
-        # Set it as the main provider
         provider_config.main_provider = selected_provider
-        # Update the text on the dropdown button
         self.provider_dropdown_button.text = f'Selected Main Provider: {selected_provider.value}'
         
     def on_provider_check(self, provider, instance, value):
@@ -284,20 +274,20 @@ class RecorderGUI(BoxLayout):
         setattr(self, f"{provider.name.lower()}_key", self.provider_keys[provider.name])
 
         key_layout = BoxLayout(orientation='horizontal', height=60)
-        key_layout.add_widget(create_label(text=f"{provider.value}"))
+        key_layout.add_widget(create_label(text=f"{provider.value}", size_hint_x=0.5))
         
         last_transcription_label = create_wrapped_label(text=self.provider_last_transcription[provider.name], font_size='8sp')
         setattr(self, f"{provider.name.lower()}_last_transcription", last_transcription_label)
         key_layout.add_widget(last_transcription_label)
 
-        processing_time_label = create_label(text=self.provider_processing_time[provider.name])
+        processing_time_label = create_label(text=self.provider_processing_time[provider.name], size_hint_x=0.3)
         setattr(self, f"{provider.name.lower()}_processing_time", processing_time_label)
         key_layout.add_widget(processing_time_label)
         key_input = create_input(text=self.provider_keys[provider.name], 
-                                on_validate=partial(self.on_key_validate, provider))
+                                on_validate=partial(self.on_key_validate, provider), size_hint_x=0.5)
         setattr(self, f"{provider.name.lower()}_key_input", key_input)
         key_layout.add_widget(key_input)
-        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='8sp')
+        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='8sp', size_hint_x=0.5)
         setattr(self, f"{provider.name.lower()}_key_value", key_value)
         key_layout.add_widget(key_value)
 
@@ -506,8 +496,6 @@ def transcribe_audio_batch(audio_buffer, provider):
     
 def local_whisper_transcribe(audio_buffer):
     global model
-    if not model:
-        model = WhisperModel("base.en", device="cpu", compute_type="int8")
     segments, _ = model.transcribe(audio_buffer)
     transcript = ""
     for segment in segments:

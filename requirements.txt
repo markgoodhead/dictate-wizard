@@ -1,0 +1,10 @@
+wavio
+requests
+numpy
+pynput
+sounddevice
+faster-whisper
+urllib3
+soniox
+kivy
+pyperclip
