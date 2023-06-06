@@ -1,4 +1,5 @@
 import os
+os.environ["KIVY_NO_FILELOG"] = "1"
 if cores := os.cpu_count():
     os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
