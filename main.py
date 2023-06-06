@@ -1,5 +1,6 @@
 import os
 os.environ["KIVY_NO_FILELOG"] = "1"
+os.environ["KIVY_NO_CONSOLELOG"] = "1"
 if cores := os.cpu_count():
     os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
@@ -413,7 +414,6 @@ def transcribe_audio_stream():
 
 def on_press(key):
     global current_pressed_modifiers, audio, is_recording, stream, HOTKEY, MODIFIERS, provider_config, batch_providers, streaming_providers
-    
     if key in MODIFIERS:
         current_pressed_modifiers.add(key)
 
@@ -530,7 +530,9 @@ def conjecture_transcribe(audio_buffer):
         return None
 
 def start_listener():
-    with Listener(on_press=on_press, on_release=on_release) as listener:
+    def for_canonical(f):
+        return lambda k: f(listener.canonical(k))
+    with Listener(on_press=for_canonical(on_press), on_release=for_canonical(on_release)) as listener:
         listener.join()
 
 if __name__ == '__main__':
