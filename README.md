@@ -67,7 +67,7 @@ Wishlist for improvements:
 - Support CoreML and GPUs for faster local Whisper inference
 - Support streaming for local Whisper inference
 - Enable selecting larger Whisper models locally (would require performance improvements to make practical)
-- Test Windows and Linux versions
+- Test Linux version
 - Package Dictate Wizard up into a deployable, e.g. with PyInstaller
 
 Feature requests welcomed too; please make an Issue or discuss in the Discord server.
