@@ -277,7 +277,7 @@ class RecorderGUI(BoxLayout):
         key_layout = BoxLayout(orientation='horizontal', height=60)
         key_layout.add_widget(create_label(text=f"{provider.value}", size_hint_x=0.5))
         
-        last_transcription_label = create_wrapped_label(text=self.provider_last_transcription[provider.name], font_size='8sp')
+        last_transcription_label = create_wrapped_label(text=self.provider_last_transcription[provider.name], font_size='10sp')
         setattr(self, f"{provider.name.lower()}_last_transcription", last_transcription_label)
         key_layout.add_widget(last_transcription_label)
 
@@ -288,7 +288,7 @@ class RecorderGUI(BoxLayout):
                                 on_validate=partial(self.on_key_validate, provider), size_hint_x=0.5)
         setattr(self, f"{provider.name.lower()}_key_input", key_input)
         key_layout.add_widget(key_input)
-        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='8sp', size_hint_x=0.5)
+        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='10sp', size_hint_x=0.5)
         setattr(self, f"{provider.name.lower()}_key_value", key_value)
         key_layout.add_widget(key_value)
 
