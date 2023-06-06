@@ -10,7 +10,7 @@ It supports local Whisper-based transcription (free, but lower accuracy) as well
 
 It features an interactive GUI with options to update API provider keys, toggle active providers, and designate a primary provider for the transcription (the one used to output the text to the keyboard). Dictate Wizard also lets users customize their hotkey and modifier keys to activate recording.
 
-This project is written in Python and uses Kivy for the GUI. It's intended to be cross-platform (in theory! Only tested on MacOS so far; please raise any issues on Windows and Linux!). It outputs via adding the transcription text into the clipboard and pasting it.
+This project is written in Python and uses Kivy for the GUI. It's intended to be cross-platform (I've tested on MacOS and Windows but not Linux). It outputs via adding the transcription text into the clipboard and pasting it.
 
 ## Providers
 
@@ -51,6 +51,12 @@ python main.py
 5. Use the GUI to configure your API keys, select the providers you wish to use, and designate your hotkey and modifiers.
 
 6. Activate recording by pressing and holding your selected hotkey combination (defaults to ctrl+alt+x). Speak into your microphone. Release your hotkey and the transcription will be output wherever your cursor is highlighted.
+
+## Known Issues
+
+Windows:
+- The keyboard actions seem to take 300ms to process which adds extra delay to the text output
+- Doesn't load the Wizard icon
 
 ## How to Contribute
 Contributions are welcome! Please feel free to submit a pull request or open an issue. For major changes, please open an issue first to discuss what you would like to change.
