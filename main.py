@@ -403,14 +403,14 @@ def transcribe_audio_stream():
                         transcript += text
                     else:
                         transcript += " " + text
-        print(f"Transcription from {Provider.SONIOX.value}: {transcript}")
-        print(f"Processing {Provider.SONIOX.value} transcription request took {time.time() - start_time:.2f} seconds")
         app = App.get_running_app()
         app.root.provider_last_transcription[Provider.SONIOX.name] = f"{transcript}"
         app.root.provider_processing_time[Provider.SONIOX.name] = f"{time.time() - start_time:.2f} s"
         if Provider.SONIOX == provider_config.main_provider:
             print_transcript(transcript)
             app.root.processing_status = "Not Processing"
+        print(f"Transcription from {Provider.SONIOX.value}: {transcript}")
+        print(f"Processing {Provider.SONIOX.value} transcription request took {time.time() - start_time:.2f} seconds")
 
 def on_press(key):
     global current_pressed_modifiers, audio, is_recording, stream, HOTKEY, MODIFIERS, provider_config, batch_providers, streaming_providers
