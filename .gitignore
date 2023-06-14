@@ -5,4 +5,4 @@ api_keys.json
 api_keys copy.json
 build/
 dist/
-main.spec
+*.spec
