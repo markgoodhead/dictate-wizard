@@ -3,3 +3,6 @@ api_keys.json
 *.wav
 .DS_Store
 api_keys copy.json
+build/
+dist/
+main.spec
