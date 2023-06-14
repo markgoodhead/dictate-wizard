@@ -1,12 +1,13 @@
 import os
-os.environ["KIVY_NO_FILELOG"] = "1"
-os.environ["KIVY_NO_CONSOLELOG"] = "1"
+os.environ["KIVY_LOG_MODE"] = "PYTHON"
 if cores := os.cpu_count():
     os.environ["OMP_NUM_THREADS"] = str(cores)
 import wavio
 import io
+import sys
 import json
 import requests
+from io import StringIO
 from functools import partial
 import numpy as np
 from copy import deepcopy
@@ -35,12 +36,14 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.graphics import Color, Rectangle
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
-from kivy.properties import StringProperty, DictProperty
+from kivy.properties import StringProperty, DictProperty, ObjectProperty
 from kivy.utils import get_color_from_hex
 from kivy.uix.modalview import ModalView
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.button import Button
 from kivy.uix.dropdown import DropDown
+from kivy.uix.popup import Popup
+from kivy.clock import Clock
 
 # Needed for Conjecture API
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -74,16 +77,24 @@ class ProviderConfig:
             raise ValueError(f"Main provider {self.main_provider.value} is not in the set of activated providers")
     
 provider_config = ProviderConfig(main_provider=Provider.LOCAL_WHISPER, activated_providers={
-    Provider.LOCAL_WHISPER,
-    Provider.OPENAI, 
-    Provider.CONJECTURE, 
-    Provider.SONIOX})
+    Provider.LOCAL_WHISPER})
 
 batch_providers = {Provider.CONJECTURE, Provider.LOCAL_WHISPER, Provider.OPENAI}
 streaming_providers = {Provider.SONIOX}
 
-def make_whisper_model():
-    return WhisperModel("base.en", device="cpu", compute_type="int8")
+class ModelSize(Enum):
+    TINY = "tiny"
+    TINY_EN = "tiny.en"
+    BASE = "base"
+    BASE_EN = "base.en"
+    SMALL = "small"
+    SMALL_EN = "small.en"
+    MEDIUM = "medium"
+    MEDIUM_EN = "medium.en"
+    LARGE = "large-v2"
+
+def make_whisper_model(model_size: ModelSize = ModelSize.BASE_EN):
+    return WhisperModel(model_size.value, device="auto", compute_type="auto")
 
 model = make_whisper_model()
     
@@ -128,7 +139,45 @@ def create_button(text, font_size='15sp', height=60):
     )
     return button
 
+class LoadingDialog(Popup):
+    def __init__(self, **kwargs):
+        super(LoadingDialog, self).__init__(**kwargs)
+        self.title = "Loading model..."
+        self.auto_dismiss = False
+        self.log_message = Label()
+        self.content = self.log_message
+        self.is_loading_complete = False
+
+    def set_message(self, message):
+        def update_message(dt):
+            self.log_message.text = message
+        Clock.schedule_once(update_message)
+
+    def on_open(self):
+        self.log_message.text = "Loading..."
+
+    def on_dismiss(self):
+        self.log_message.text = ""
+        
+class ErrorPopup(Popup):
+    def __init__(self, error_message, **kwargs):
+        super(ErrorPopup, self).__init__(**kwargs)
+        self.title = "Error"
+        self.size_hint = (0.8, 0.4)
+        
+        content_layout = BoxLayout(orientation='vertical', padding=10)
+        error_label = Label(text=error_message)
+        dismiss_button = Button(text="Dismiss", size_hint=(1, 0.3))
+        dismiss_button.bind(on_release=self.dismiss)
+        
+        content_layout.add_widget(error_label)
+        content_layout.add_widget(dismiss_button)
+        
+        self.content = content_layout
+        
+
 class RecorderGUI(BoxLayout):
+    error_popup = ObjectProperty(None)
     hotkey = StringProperty("x")
     modifiers = StringProperty("ctrl+alt")
     recording_status = StringProperty("Not Recording")
@@ -183,11 +232,8 @@ class RecorderGUI(BoxLayout):
         self.add_widget(modifiers_layout)
         
         self.provider_modal_view = ModalView(size_hint=(0.8, 0.8))
-        # Create a layout for the contents of the ModalView
         provider_layout = BoxLayout(orientation='vertical')
-        # Create an item for each provider
         for provider in Provider:
-            # Each item is a horizontal box with a label and a checkbox
             box = BoxLayout(orientation='horizontal')
             box.add_widget(Label(text=provider.value))
             checkbox = CheckBox(active=provider in provider_config.activated_providers)
@@ -195,15 +241,11 @@ class RecorderGUI(BoxLayout):
             box.add_widget(checkbox)
             provider_layout.add_widget(box)
         self.provider_modal_view.add_widget(provider_layout)
-        # Create a button that opens the ModalView
         self.provider_modal_button = create_button(text='Select Active Providers')
         self.provider_modal_button.bind(on_release=self.provider_modal_view.open)
         
-        # Create a dropdown for selecting the main provider
         self.provider_dropdown = DropDown()
-        # When a provider is selected from the dropdown, it becomes the main provider
         self.provider_dropdown.bind(on_select=self.on_provider_dropdown_select)
-        # Create a button that opens the dropdown
         self.provider_dropdown_button = create_button(text=f'Selected Main Provider: {provider_config.main_provider.value}')
         self.provider_dropdown_button.bind(on_release=self.provider_dropdown.open)
         
@@ -220,7 +262,7 @@ class RecorderGUI(BoxLayout):
         titles_layout.add_widget(create_label(text="API Key", underlined=True, size_hint_x=0.5))
         self.add_widget(titles_layout)
         
-        for provider in Provider:
+        for provider in provider_config.activated_providers:
             self.on_provider_check(provider, None, provider in provider_config.activated_providers)
 
         self.bind(recording_status=self.recording_status_label.setter('text'))
@@ -237,7 +279,6 @@ class RecorderGUI(BoxLayout):
         if value:
             provider_config.activated_providers.add(provider)
             self.create_provider_ui(provider)
-            # When a provider is activated, add it to the dropdown
             btn = create_button(text=provider.value, height=50)
             btn.bind(on_release=lambda btn: self.provider_dropdown.select(btn.text))
             self.provider_dropdown.add_widget(btn)
@@ -245,14 +286,12 @@ class RecorderGUI(BoxLayout):
         else:
             provider_config.activated_providers.discard(provider)
             self.clear_provider_ui(provider)
-            # When a provider is deactivated, remove its corresponding button from the dropdown
             for btn in self.provider_buttons:
                 if btn.text == provider.value:
                     self.provider_dropdown.remove_widget(btn)
                     self.provider_buttons.remove(btn)  # Remove the button reference
                     break
             if provider == provider_config.main_provider:
-                # If the main provider was deactivated, set the first activated provider as the main provider
                 provider_config.main_provider = next(iter(provider_config.activated_providers), None)
                 self.provider_dropdown_button.text = f'Selected Main Provider: {provider_config.main_provider.value}'
 
@@ -285,21 +324,68 @@ class RecorderGUI(BoxLayout):
         processing_time_label = create_label(text=self.provider_processing_time[provider.name], size_hint_x=0.3)
         setattr(self, f"{provider.name.lower()}_processing_time", processing_time_label)
         key_layout.add_widget(processing_time_label)
-        key_input = create_input(text=self.provider_keys[provider.name], 
-                                on_validate=partial(self.on_key_validate, provider), size_hint_x=0.5)
-        setattr(self, f"{provider.name.lower()}_key_input", key_input)
-        key_layout.add_widget(key_input)
-        key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='10sp', size_hint_x=0.5)
-        setattr(self, f"{provider.name.lower()}_key_value", key_value)
-        key_layout.add_widget(key_value)
+        if provider == Provider.LOCAL_WHISPER:
+            self.model_dropdown = DropDown()
+            self.model_dropdown.bind(on_select=self.on_model_change)
+            self.model_dropdown_button = create_button(text=f'Selected Model: {ModelSize.BASE_EN.value}')
+            self.model_dropdown_button.bind(on_release=self.model_dropdown.open)
+            for model_size in ModelSize:
+                btn = create_button(text=model_size.value, height=50)
+                btn.bind(on_release=lambda btn: self.model_dropdown.select(btn.text))
+                self.model_dropdown.add_widget(btn)
+            key_layout.add_widget(self.model_dropdown_button)
+        else:
+            key_input = create_input(text=self.provider_keys[provider.name], 
+                                    on_validate=partial(self.on_key_validate, provider), size_hint_x=0.5)
+            setattr(self, f"{provider.name.lower()}_key_input", key_input)
+            key_layout.add_widget(key_input)
+            key_value = create_wrapped_label(text=self.provider_keys[provider.name], font_size='10sp', size_hint_x=0.5)
+            setattr(self, f"{provider.name.lower()}_key_value", key_value)
+            key_layout.add_widget(key_value)
+            self.bind(**{f"{provider.name.lower()}_key": key_value.setter('text')})
+            self.bind(provider_keys=self.update_provider_key_value(provider))
 
         self.add_widget(key_layout)
         setattr(self, f"{provider.name.lower()}_key_layout", key_layout)
-        #key_value = getattr(self, f"{provider.name.lower()}_key_value")
-        self.bind(**{f"{provider.name.lower()}_key": key_value.setter('text')})
-        self.bind(provider_keys=self.update_provider_key_value(provider))
         self.bind(provider_last_transcription=self.update_provider_transcription_value(provider))
         self.bind(provider_processing_time=self.update_provider_processing_time_value(provider))
+        
+    def on_model_change(self, instance, value):
+        loading_dialog = LoadingDialog()
+        loading_dialog.open()
+        
+        class CustomStream(StringIO):
+            def write(self, message):
+                last_line = message.split('\n')[-1]
+                loading_dialog.set_message(last_line)
+
+            def flush(self):
+                pass
+
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        custom_stream = CustomStream()
+        sys.stdout = custom_stream
+        sys.stderr = custom_stream
+
+        def load_model():
+            global model
+            try:
+                model = make_whisper_model(ModelSize(value))
+                loading_dialog.is_loading_complete = True
+                Clock.schedule_once(lambda dt: loading_dialog.dismiss())
+                self.model_dropdown_button.text = f'Selected Model: {value}'
+            except Exception as e:
+                Clock.schedule_once(lambda dt: loading_dialog.dismiss())
+                def set_error_popup(e):
+                    self.error_popup = ErrorPopup(str(e))
+                    self.error_popup.open()
+                Clock.schedule_once(lambda dt, e=e: set_error_popup(e))
+            
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+        Thread(target=load_model).start()
         
     def clear_provider_ui(self, provider):
         key_layout = getattr(self, f"{provider.name.lower()}_key_layout")
@@ -332,7 +418,6 @@ class RecorderGUI(BoxLayout):
         provider_keys[provider.name] = instance.text
         self.provider_keys[provider.name] = instance.text
 
-        # If the provider is SONIOX, update the API key
         if provider == Provider.SONIOX:
             set_api_key(instance.text)
 
@@ -360,7 +445,7 @@ class RecorderGUI(BoxLayout):
 
 class RecorderApp(App):
     title = 'Dictate Wizard'
-    icon = 'dictate_wizard.ico'
+    icon = 'dictate_wizard.png'
     def build(self):
         return RecorderGUI()
     
@@ -372,7 +457,6 @@ def record_callback(indata, frames, time, status):
     audio.append(indata.copy())
     
 def iter_audio_queue() -> Iterable[bytes]:
-    # This function yields audio data from the queue
     while True:
         audio = audio_queue.get()
         if audio is None:
@@ -386,7 +470,6 @@ executor = ThreadPoolExecutor(max_workers=1)
 
 def transcribe_audio_stream():
     global start_time
-    # This function is run in a separate thread and continuously processes audio data
     with SpeechClient() as client:
         transcript = ""
         for result in transcribe_stream(iter_audio_queue(), 

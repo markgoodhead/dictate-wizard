@@ -1,6 +1,6 @@
 # 🪄 Dictate Wizard 🪄 
 
-![Logo](dictate_wizard.ico)
+![Logo](dictate_wizard.png)
 
 ![Discord Shield](https://discordapp.com/api/guilds/1115298962757402665/widget.png?style=shield)
 
@@ -21,7 +21,7 @@ Suggestions for alternative providers to be added are welcome (please open an Is
 
 Soniox is the only provider supported in 'streaming' mode, i.e. the transcription happens concurrently with the audio recording. As such it's the fastest provider in the list to return an output as both the local Whisper and the other providers are all processed in a sequential fashion.
 
-The local Whisper functionality is provided by https://github.com/guillaumekln/faster-whisper. It uses the base.en model as this is competitive in transcription time with the API providers. 
+The local Whisper functionality is provided by https://github.com/guillaumekln/faster-whisper. It defaults to the base.en model as this is roughly competitive in transcription time with the API providers, however you can select any sized model from the dropdown. Smaller models will transcribe faster but larger models will transcribe more accurately. Select 'en' models if you will be transcribing in English.
 
 ## Usage
 1. Clone this repository:
