@@ -282,14 +282,14 @@ class RecorderGUI(BoxLayout):
             btn = create_button(text=provider.value, height=50)
             btn.bind(on_release=lambda btn: self.provider_dropdown.select(btn.text))
             self.provider_dropdown.add_widget(btn)
-            self.provider_buttons.append(btn)  # Store the button reference
+            self.provider_buttons.append(btn)
         else:
             provider_config.activated_providers.discard(provider)
             self.clear_provider_ui(provider)
             for btn in self.provider_buttons:
                 if btn.text == provider.value:
                     self.provider_dropdown.remove_widget(btn)
-                    self.provider_buttons.remove(btn)  # Remove the button reference
+                    self.provider_buttons.remove(btn)
                     break
             if provider == provider_config.main_provider:
                 provider_config.main_provider = next(iter(provider_config.activated_providers), None)
@@ -537,7 +537,6 @@ def on_release(key):
                 if write_recording:
                     wavio.write("last_recording.wav", audio_data, 16000, sampwidth=2)
                 audio_buffer.seek(0)
-                #print(f"Processing audio file took {time.time() - start_time:.2f} seconds")
                 threads = []
                 for provider in provider_config.activated_providers:
                     if provider in batch_providers:  
