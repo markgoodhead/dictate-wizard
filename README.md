@@ -6,7 +6,7 @@
 
 Dictate Wizard is an open source dictation tool. The goal is to obsolete as much typing as possible and let you speak your emails, instant messages etc instead.
 
-It supports local Whisper-based transcription (free, but lower accuracy) as well as multiple commercial providers like OpenAI, Soniox and Conjecture (higher accuracy but you need a paid API key). Users can select a single or multiple providers and compare the transcription results and processing time.
+It supports local Whisper-based transcription (free, but slower or lower accuracy than paid API solutions) as well as multiple commercial providers like OpenAI, Soniox and Conjecture (fast and high accuracy but you need a paid API key). Users can select a single or multiple providers and compare the transcription results and processing time.
 
 It features an interactive GUI with options to update API provider keys, toggle active providers, and designate a primary provider for the transcription (the one used to output the text to the keyboard). Dictate Wizard also lets users customize their hotkey and modifier keys to activate recording.
 
