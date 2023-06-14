@@ -25,7 +25,7 @@ jobs:
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
+        pyinstaller --additional-hooks-dir=hooks --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
         
     - name: Upload artifact
       uses: actions/upload-artifact@v2

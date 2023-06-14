@@ -94,7 +94,7 @@ class ModelSize(Enum):
     LARGE = "large-v2"
 
 def make_whisper_model(model_size: ModelSize = ModelSize.BASE_EN):
-    return WhisperModel(model_size.value, device="auto", compute_type="auto")
+    return WhisperModel(model_size.value, device="cpu", compute_type="auto")
 
 model = make_whisper_model()
     
