@@ -17,6 +17,14 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.11
+        
+    - name: Download and extract Mesa
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/pal1000/mesa-dist-win/releases/download/23.1.2/mesa3d-23.1.2-release-mingw.7z" -OutFile "mesa.7z"
+        7z x "mesa.7z" -o"mesa"
+        
+    - name: Add Mesa to PATH
+      run: echo "mesa\mesa3d-23.1.2-release-mingw\x86" >> $GITHUB_PATH
 
     - name: Install dependencies
       run: |
