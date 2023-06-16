@@ -39,6 +39,8 @@ jobs:
         
     - name: Move OpenGL DLLs
       run: |
+        if exist opengl32.dll del /F opengl32.dll
+        if exist libglapi.dll del /F libglapi.dll
         move x64\opengl32.dll .\
         move x64\libglapi.dll .\
 
