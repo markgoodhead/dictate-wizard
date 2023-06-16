@@ -34,7 +34,7 @@ jobs:
     - name: Move OpenGL DLLs
       shell: pwsh
       run: |
-        Move-Item x64\* .\
+        Move-Item x64\* .\ -Force
         
     - name: Adjust PATH
       shell: pwsh
