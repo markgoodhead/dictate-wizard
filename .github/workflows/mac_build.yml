@@ -27,6 +27,20 @@ jobs:
       run: |
         pyinstaller --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
 
+    - name: Decode and import certificate
+      run: |
+        echo ${{ secrets.MACOS_DEV_CERT }} | base64 --decode > cert.p12
+        KEYCHAIN_PATH=$(security create-keychain -p "" build.keychain)
+        security default-keychain -s "${KEYCHAIN_PATH}"
+        security unlock-keychain -p "" "${KEYCHAIN_PATH}"
+        security import cert.p12 -k "${KEYCHAIN_PATH}" -P "" -T "/usr/bin/codesign"
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "" "${KEYCHAIN_PATH}"
+  
+    - name: Sign the app
+      run: |
+        codesign --sign "Mac Developer: Mark Goodhead (QQ8X476CTY)" --keychain "${KEYCHAIN_PATH}" dist/Dictate\ Wizard.app
+  
+
     - name: Upload artifact
       uses: actions/upload-artifact@v2
       with:
