@@ -8,7 +8,7 @@ jobs:
   build:
 
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
     - uses: actions/checkout@v2
@@ -36,6 +36,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
+    
+    - name: Debug DLLs
+      shell: cmd
+      run: |
+        dir "%GITHUB_WORKSPACE%"
+        echo PATH=%PATH%
 
     - name: Build with PyInstaller
       run: |
