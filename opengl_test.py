@@ -7,5 +7,5 @@ if name is None:
 else:
     lib = ctypes.CDLL(name)
     path = ctypes.create_unicode_buffer(1024)  # adjust buffer size if necessary
-    ctypes.windll.kernel32.GetModuleFileNameW(lib._handle, path, len(path))
+    ctypes.windll.kernel32.GetModuleFileNameW(ctypes.c_void_p(lib._handle), path, len(path))
     print(path.value)
