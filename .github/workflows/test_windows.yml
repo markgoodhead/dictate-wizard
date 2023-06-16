@@ -23,3 +23,8 @@ jobs:
           pyinstaller --additional-hooks-dir=hooks --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
         env:
           KIVY_GL_BACKEND: angle_sdl2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: Dictate Wizard
+          path: dist/*
