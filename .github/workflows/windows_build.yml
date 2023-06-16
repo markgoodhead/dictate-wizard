@@ -40,17 +40,18 @@ jobs:
         Move-Item x64\libglapi.dll .\
 
     - name: Adjust PATH
-      run: echo "PATH=$(pwd);$PATH" >> $env:GITHUB_ENV
+      run: echo "PATH=$(pwd);x64;$PATH" >> $env:GITHUB_ENV
 
     - name: Set PYSDL2_DLL_PATH for PyInstaller
       run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     
     - name: Debug DLLs
-      shell: cmd
+      shell: pwsh
       run: |
-        dir "%GITHUB_WORKSPACE%"
-        echo PATH=%PATH%
-        python opengl_test.py
+        Set-Location -Path "${{ github.workspace }}"
+        dir
+        echo PATH=$env:PATH
+        python .\opengl_test.py
         
     - name: Install dependencies
       run: |
