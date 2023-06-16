@@ -34,13 +34,13 @@ jobs:
     - name: Move OpenGL DLLs
       shell: pwsh
       run: |
-        if (Test-Path .\opengl32.dll) { Remove-Item .\opengl32.dll -Force }
-        if (Test-Path .\libglapi.dll) { Remove-Item .\libglapi.dll -Force }
-        Move-Item x64\opengl32.dll .\
-        Move-Item x64\libglapi.dll .\
-
+        Move-Item x64\* .\
+        
     - name: Adjust PATH
-      run: echo "PATH=$(pwd);x64;$PATH" >> $env:GITHUB_ENV
+      shell: pwsh
+      run: |
+        echo "PATH=$(pwd);$PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Add-Content -Path $env:Path -Value ";$(pwd)"
 
     - name: Set PYSDL2_DLL_PATH for PyInstaller
       run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
