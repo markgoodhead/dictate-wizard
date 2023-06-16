@@ -19,12 +19,6 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.11
-        
-    - name: Configure
-      run: cmake -Bbuild -T host=x64 -A x64
-
-    - name: Build
-      run: cmake --build build --config Debug -j4
 
     - name: Install 7zip
       run: choco install 7zip.install
