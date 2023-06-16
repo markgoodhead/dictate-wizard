@@ -42,7 +42,7 @@ jobs:
       run: |
         dir "%GITHUB_WORKSPACE%"
         echo PATH=%PATH%
-        python ctypes.py
+        python opengl_test.py
 
     - name: Build with PyInstaller
       run: |
