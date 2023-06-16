@@ -43,6 +43,9 @@ jobs:
 
     - name: Set PYSDL2_DLL_PATH for PyInstaller
       run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      
+    - name: Set LIBGL_ALWAYS_SOFTWARE
+      run: echo "LIBGL_ALWAYS_SOFTWARE=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     
     - name: Debug DLLs
       shell: pwsh
@@ -51,6 +54,13 @@ jobs:
         dir
         echo PATH=$env:PATH
         python .\opengl_test.py
+        
+    - name: Check OpenGL Version
+      run: |
+        python -m pip install --upgrade pip
+        pip install PyOpenGL
+        pip install freeglut
+        python -c "from OpenGL.GL import *; from OpenGL.GLUT import *; from OpenGL.GLU import *; glutInit(); glutCreateWindow('OpenGL Version Check'); version = glGetString(GL_VERSION); vendor = glGetString(GL_VENDOR); print('Vendor:', vendor); print('OpenGL Version:', version);"
         
     - name: Install dependencies
       run: |
