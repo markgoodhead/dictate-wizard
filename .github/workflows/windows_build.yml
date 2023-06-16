@@ -31,18 +31,13 @@ jobs:
         mklink "%GITHUB_WORKSPACE%\opengl32.dll" "%GITHUB_WORKSPACE%\x64\opengl32.dll"
         mklink "%GITHUB_WORKSPACE%\libglapi.dll" "%GITHUB_WORKSPACE%\x64\libglapi.dll"
         
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
     - name: Move OpenGL DLLs
+      shell: pwsh
       run: |
-        if exist opengl32.dll del /F opengl32.dll
-        if exist libglapi.dll del /F libglapi.dll
-        move x64\opengl32.dll .\
-        move x64\libglapi.dll .\
+        if (Test-Path .\opengl32.dll) { Remove-Item .\opengl32.dll -Force }
+        if (Test-Path .\libglapi.dll) { Remove-Item .\libglapi.dll -Force }
+        Move-Item x64\opengl32.dll .\
+        Move-Item x64\libglapi.dll .\
 
     - name: Adjust PATH
       run: echo "PATH=$(pwd);$PATH" >> $env:GITHUB_ENV
@@ -56,6 +51,12 @@ jobs:
         dir "%GITHUB_WORKSPACE%"
         echo PATH=%PATH%
         python opengl_test.py
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
 
     - name: Build with PyInstaller
       run: |
