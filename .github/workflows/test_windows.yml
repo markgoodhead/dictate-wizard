@@ -13,17 +13,13 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: 3.9
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          release: false
-          install: mingw-w64-x86_64-mesa
+          python-version: 3.11
       - name: Build
         shell: pwsh
         run: |
-          $env:GLCONTEXT_WIN_LIBGL = "C:\msys64\mingw64\bin\opengl32.dll"
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pyinstaller
           pyinstaller --additional-hooks-dir=hooks --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
+        env:
+          KIVY_GL_BACKEND: angle_sdl2
