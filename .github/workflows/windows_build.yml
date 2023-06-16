@@ -40,7 +40,6 @@ jobs:
       shell: pwsh
       run: |
         echo "PATH=$(pwd);$PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        Add-Content -Path $env:Path -Value ";$(pwd)"
 
     - name: Set PYSDL2_DLL_PATH for PyInstaller
       run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
