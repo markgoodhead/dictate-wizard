@@ -42,6 +42,7 @@ jobs:
       run: |
         dir "%GITHUB_WORKSPACE%"
         echo PATH=%PATH%
+        python ctypes.py
 
     - name: Build with PyInstaller
       run: |
