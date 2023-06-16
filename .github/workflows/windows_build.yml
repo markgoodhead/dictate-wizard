@@ -36,6 +36,17 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
+        
+    - name: Move OpenGL DLLs
+      run: |
+        move x64\opengl32.dll .\
+        move x64\libglapi.dll .\
+
+    - name: Adjust PATH
+      run: echo "PATH=$(pwd);$PATH" >> $env:GITHUB_ENV
+
+    - name: Set PYSDL2_DLL_PATH for PyInstaller
+      run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
     
     - name: Debug DLLs
       shell: cmd
