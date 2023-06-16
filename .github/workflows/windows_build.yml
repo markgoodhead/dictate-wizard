@@ -3,79 +3,29 @@ name: Build and Package Kivy App for Windows
 on:
   push:
     branches: [ master ]
-
+    
 jobs:
   build:
-
     runs-on: windows-latest
-    timeout-minutes: 10
-
+    timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v2
-      with:
-        submodules: true
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: 3.11
-
-    - name: Install 7zip
-      run: choco install 7zip.install
-      
-    - name: Install Mesa
-      shell: cmd
-      run: |
-        curl.exe -L --output mesa.7z --url https://github.com/pal1000/mesa-dist-win/releases/download/23.1.2/mesa3d-23.1.2-release-msvc.7z
-        "C:\Program Files\7-Zip\7z.exe" x mesa.7z
-        mklink "%GITHUB_WORKSPACE%\opengl32.dll" "%GITHUB_WORKSPACE%\x64\opengl32.dll"
-        mklink "%GITHUB_WORKSPACE%\libglapi.dll" "%GITHUB_WORKSPACE%\x64\libglapi.dll"
-        
-    - name: Move OpenGL DLLs
-      shell: pwsh
-      run: |
-        Move-Item x64\* .\ -Force
-        
-    - name: Adjust PATH
-      shell: pwsh
-      run: |
-        echo "PATH=$(pwd);$PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    - name: Set PYSDL2_DLL_PATH for PyInstaller
-      run: echo "PYSDL2_DLL_PATH=$(pwd)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      
-    - name: Set LIBGL_ALWAYS_SOFTWARE
-      run: echo "LIBGL_ALWAYS_SOFTWARE=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-    
-    - name: Debug DLLs
-      shell: pwsh
-      run: |
-        Set-Location -Path "${{ github.workspace }}"
-        dir
-        echo PATH=$env:PATH
-        python .\opengl_test.py
-        
-    - name: Check OpenGL Version
-      run: |
-        python -m pip install --upgrade pip
-        pip install PyOpenGL
-        pip install freeglut
-        python -c "from OpenGL.GL import *; from OpenGL.GLUT import *; from OpenGL.GLU import *; glutInit(); glutCreateWindow('OpenGL Version Check'); version = glGetString(GL_VERSION); vendor = glGetString(GL_VENDOR); print('Vendor:', vendor); print('OpenGL Version:', version);"
-        
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-
-    - name: Build with PyInstaller
-      run: |
-        pyinstaller --additional-hooks-dir=hooks --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
-      env:
-        PATH: "${{ env.PATH }};%GITHUB_WORKSPACE%"   
-        
-    - name: Upload artifact
-      uses: actions/upload-artifact@v2
-      with:
-        name: Dictate Wizard
-        path: dist/*
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.11
+      - name: Build
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pillow
+          pip install pyinstaller
+          pyinstaller --additional-hooks-dir=hooks --onefile --windowed --icon=dictate_wizard.icns --name "Dictate Wizard" main.py
+        env:
+          KIVY_GL_BACKEND: angle_sdl2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: Dictate Wizard
+          path: dist/*
