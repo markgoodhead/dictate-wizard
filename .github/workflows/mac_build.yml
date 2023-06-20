@@ -39,7 +39,7 @@ jobs:
         security unlock-keychain -p $KEYCHAIN_PASSWORD build.keychain
         security import certificate.p12 -k build.keychain -P $MACOS_CERTIFICATE_PWD -T /usr/bin/codesign
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k $KEYCHAIN_PASSWORD build.keychain
-        /usr/bin/codesign --force -s "Mac Developer: Mark Goodhead (QQ8X476CTY)" dist/Dictate\ Wizard.app -v
+        /usr/bin/codesign --force -s "Developer ID Application: Mark Goodhead (H2864GX6J5)" dist/Dictate\ Wizard.app -v
 
     - name: Upload artifact
       uses: actions/upload-artifact@v2
