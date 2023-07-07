@@ -1,4 +1,5 @@
 api_keys.json
+hotkey_config.json
 *.ttf
 *.wav
 .DS_Store

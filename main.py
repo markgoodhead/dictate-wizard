@@ -197,6 +197,7 @@ class RecorderGUI(BoxLayout):
         self.provider_buttons = []
         
         self.load_api_keys()
+        self.load_hotkey_config()
 
         with self.canvas.before:
             Color(*get_color_from_hex("#0C1441"))
@@ -425,9 +426,11 @@ class RecorderGUI(BoxLayout):
 
     def on_hotkey_validate(self, instance):
         self.update_hotkey_and_modifiers(instance.text, self.modifiers_input.text)
+        self.save_hotkey_config(instance.text, self.modifiers_input.text)
 
     def on_modifiers_validate(self, instance):
         self.update_hotkey_and_modifiers(self.hotkey_input.text, instance.text)
+        self.save_hotkey_config(self.hotkey_input.text, instance.text)
 
     def update_hotkey_and_modifiers(self, new_hotkey, new_modifiers):
         global HOTKEY, MODIFIERS
@@ -442,6 +445,28 @@ class RecorderGUI(BoxLayout):
             print(f"Updating hotkey to {new_hotkey} and modifiers to {new_modifiers}")
         except:
             print(f"Invalid hotkey {new_hotkey} or modifiers {new_modifiers}.")
+            
+    def load_hotkey_config(self):
+        global HOTKEY, MODIFIERS
+        try:
+            with open("hotkey_config.json", "r") as f:
+                config = json.load(f)
+            HOTKEY = KeyCode.from_char(config["hotkey"].lower())
+            self.hotkey = config["hotkey"]
+            if config["modifiers"]:
+                MODIFIERS = {Key[modifier.lower()] for modifier in config["modifiers"]}
+            else:
+                MODIFIERS = set()
+            self.modifiers = "+".join(config["modifiers"])
+            print(f"Loaded hotkey: {config['hotkey']} and modifiers: {self.modifiers}")
+        except (FileNotFoundError, KeyError):
+            print("Hotkey configuration not found, please enter them manually")
+
+    def save_hotkey_config(self, hotkey, modifiers):
+        config = {"hotkey": hotkey, "modifiers": modifiers.split('+')}
+        with open("hotkey_config.json", "w") as f:
+            json.dump(config, f)
+
 
 class RecorderApp(App):
     title = 'Dictate Wizard'
@@ -620,5 +645,5 @@ def start_listener():
 if __name__ == '__main__':
     listener_thread = Thread(target=start_listener, daemon=True)
     listener_thread.start()
-    print("Press ctrl + alt + x to start recording.")
+    print("Press your hotkey combination to start recording.")
     RecorderApp().run()
