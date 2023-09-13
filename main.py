@@ -49,7 +49,7 @@ from kivy.clock import Clock
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 whisper_api_url = 'https://api.openai.com/v1/audio/transcriptions'
-conjecture_api_url = 'https://api.conjecture.dev/transcribe'
+conjecture_api_url = 'https://api.conjecture.dev/v1/transcriptions'
 
 HOTKEY = KeyCode.from_char('x')
 MODIFIERS = {Key.alt, Key.ctrl}
@@ -625,12 +625,12 @@ def openai_transcribe(audio_buffer):
         return None
     
 def conjecture_transcribe(audio_buffer):
-    headers = {"Authorization": f"Bearer {provider_keys[Provider.CONJECTURE.name]}"}
-    files = {"file": audio_buffer, "language": "en", "diarize": False, "word_timestamps": False}
+    headers = {"api-key": f"{provider_keys[Provider.CONJECTURE.name]}", "language": "en", "diarisation": "false", "word_timestamps": "false"}
+    files = {"file": audio_buffer}
     response = requests.post(conjecture_api_url, headers=headers, files=files, verify=False)
     #print(response.json())
     if response.status_code == 201:
-        transcript = response.json()["data"]["text"]
+        transcript = response.json()["transcription"]["text"]
         return transcript
     else:
         print(f'Error: {response.status_code} - {response.text}')
